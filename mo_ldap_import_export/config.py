@@ -377,7 +377,14 @@ class Settings(BaseSettings):
         "objectGUID",
         description="Name of the attribute that holds the server-assigned unique identifier. `objectGUID` on Active Directory and `entryUUID` on most standard LDAP implementations (per RFC4530).",
     )
-
+    ldap_username_field: str = Field(
+        "SamAcountName",
+        description="Name of the attribute that holds the users username. `SamAcountName` on Active Directory and `uid` on most standard LDAP implementations",
+    )
+    ldap_upn_field: str = Field(
+        "UserPrincipalName",
+        description="Active Directory uses an attribute called `UserPrincipalName` which doesn't exist in most standard LDAP implementations. The attribute `mail` can be used in openldap.",
+    )
     mo_url: AnyHttpUrl = Field(
         parse_obj_as(AnyHttpUrl, "http://mo-service:5000"),
         description="Base URL for OS2mo.",

@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterator
 
 from fastramqpi.context import Context
+from more_itertools import one
 from more_itertools import split_when
 from pydantic import parse_obj_as
 from ramodels.mo.employee import Employee
@@ -53,7 +54,7 @@ class UserNameGeneratorBase:
         search_result = paged_search(self.context, searchParameters, search_base)
         for attribute in attributes:
             output[attribute] = [
-                entry["attributes"][attribute].lower()
+                one(entry["attributes"][attribute]).lower()
                 for entry in search_result
                 if entry["attributes"][attribute]
             ]
@@ -289,14 +290,16 @@ class UserNameGeneratorBase:
 
     def _get_existing_names(self):
         existing_values = self.get_existing_values(
-            ["cn", "sAMAccountName", "userPrincipalName"]
+            ["cn", self.settings.ldap_username_field, self.settings.ldap_upn_field]
         )
 
         user_principal_names = [
-            s.split("@")[0] for s in existing_values["userPrincipalName"]
+            s.split("@")[0] for s in existing_values[self.settings.ldap_upn_field]
         ]
 
-        existing_usernames = existing_values["sAMAccountName"] + user_principal_names
+        existing_usernames = (
+            existing_values[self.settings.ldap_username_field] + user_principal_names
+        )
         existing_common_names = existing_values["cn"]
 
         return existing_usernames, existing_common_names
@@ -324,7 +327,7 @@ class UserNameGenerator(UserNameGeneratorBase):
 
         dn = self._make_dn(common_name)
         employee_attributes = await self._get_employee_ldap_attributes(employee, dn)
-        other_attributes = {"sAMAccountName": username}
+        other_attributes = {self.settings.ldap_username_field: username}
         self.dataloader.add_ldap_object(dn, employee_attributes | other_attributes)
         return dn
 
@@ -376,8 +379,8 @@ class AlleroedUserNameGenerator(UserNameGeneratorBase):
         dn = self._make_dn(common_name)
         employee_attributes = await self._get_employee_ldap_attributes(employee, dn)
         other_attributes = {
-            "sAMAccountName": username,
-            "userPrincipalName": f"{username}@alleroed.dk",
+            self.settings.ldap_username_field: username,
+            self.settings.ldap_upn_field: f"{username}@alleroed.dk",
         }
 
         self.dataloader.add_ldap_object(
