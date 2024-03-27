@@ -1022,25 +1022,26 @@ class SyncTool:
 
     async def export_org_unit_addresses_on_engagement_change(
         self, routing_key: MORoutingKey, object_uuid: UUID, **kwargs
-    ):
+    ) -> None:
         object_type = get_object_type_from_routing_key(routing_key)
-        if object_type == "engagement":
-            changed_engagement = await self.dataloader.load_mo_engagement(object_uuid)
-            org_unit_uuid = changed_engagement.org_unit.uuid
+        assert object_type == "engagement"
 
-            # Load UUIDs for all addresses in this org-unit
-            org_unit_address_uuids = []
-            for address_type_uuid in self.converter.org_unit_address_type_info.keys():
-                org_unit_addresses = await self.dataloader.load_mo_org_unit_addresses(
-                    org_unit_uuid,
-                    address_type_uuid,
-                )
-                for address in org_unit_addresses:
-                    org_unit_address_uuids.append(address.uuid)
+        changed_engagement = await self.dataloader.load_mo_engagement(object_uuid)
+        org_unit_uuid = changed_engagement.org_unit.uuid
 
-            # Export this org-unit's addresses to LDAP by publishing to internal AMQP
-            for org_unit_address_uuid in org_unit_address_uuids:
-                await self.refresh_object(org_unit_address_uuid, "address")
+        # Load UUIDs for all addresses in this org-unit
+        org_unit_address_uuids = []
+        for address_type_uuid in self.converter.org_unit_address_type_info.keys():
+            org_unit_addresses = await self.dataloader.load_mo_org_unit_addresses(
+                org_unit_uuid,
+                address_type_uuid,
+            )
+            for address in org_unit_addresses:
+                org_unit_address_uuids.append(address.uuid)
+
+        # Export this org-unit's addresses to LDAP by publishing to internal AMQP
+        for org_unit_address_uuid in org_unit_address_uuids:
+            await self.refresh_object(org_unit_address_uuid, "address")
 
     async def refresh_employee(self, employee_uuid: UUID):
         """
