@@ -102,16 +102,6 @@ def get_delete_flag(mo_object) -> bool:
     return False
 
 
-async def reject_if_not_listening(settings: Settings) -> None:
-    # If we are not supposed to listen: reject and turn the message into a dead letter.
-    if not settings.listen_to_changes_in_mo:
-        logger.info("[Unpack-payload] listen_to_changes_in_mo = False. Aborting.")
-        raise RejectMessage()
-
-
-RejectIfNotListening = Annotated[None, Depends(reject_if_not_listening)]
-
-
 async def mo_object_loader(
     dataloader: DataLoader, object_uuid: PayloadUUID, mo_routing_key: MORoutingKey
 ) -> Any:
@@ -166,7 +156,6 @@ async def process_address(
     mo_object: MOObject,
     sync_tool: depends.SyncTool,
     _: RateLimit,
-    _2: RejectIfNotListening,
 ) -> None:
     service_type = mo_object["service_type"]
 
@@ -183,7 +172,6 @@ async def process_engagement(
     args: ImportArgs,
     sync_tool: depends.SyncTool,
     _: RateLimit,
-    _2: RejectIfNotListening,
 ) -> None:
     await sync_tool.listen_to_changes_in_employees(**args)
     await sync_tool.export_org_unit_addresses_on_engagement_change(**args)
@@ -196,7 +184,6 @@ async def process_ituser(
     args: ImportArgs,
     sync_tool: depends.SyncTool,
     _: RateLimit,
-    _2: RejectIfNotListening,
 ) -> None:
     await sync_tool.listen_to_changes_in_employees(**args)
 
@@ -208,7 +195,6 @@ async def process_person(
     args: ImportArgs,
     sync_tool: depends.SyncTool,
     _: RateLimit,
-    _2: RejectIfNotListening,
 ) -> None:
     await sync_tool.listen_to_changes_in_employees(**args)
 
@@ -220,7 +206,6 @@ async def process_org_unit(
     args: ImportArgs,
     sync_tool: depends.SyncTool,
     _: RateLimit,
-    _2: RejectIfNotListening,
 ) -> None:
     await sync_tool.listen_to_changes_in_org_units(**args)
 
@@ -308,7 +293,8 @@ def create_fastramqpi(**kwargs: Any) -> FastRAMQPI:
 
     logger.info("AMQP router setup")
     amqpsystem = fastramqpi.get_amqpsystem()
-    amqpsystem.router.registry.update(amqp_router.registry)
+    if settings.listen_to_changes_in_mo:
+        amqpsystem.router.registry.update(amqp_router.registry)
 
     logger.info("Configuring LDAP connection")
     ldap_connection = configure_ldap_connection(settings)
@@ -351,7 +337,8 @@ def create_fastramqpi(**kwargs: Any) -> FastRAMQPI:
     )
     fastramqpi.add_context(internal_amqpsystem=internal_amqpsystem)
     fastramqpi.add_lifespan_manager(internal_amqpsystem)
-    internal_amqpsystem.router.registry.update(internal_amqp_router.registry)
+    if settings.listen_to_changes_in_mo:
+        internal_amqpsystem.router.registry.update(internal_amqp_router.registry)
     internal_amqpsystem.context = fastramqpi._context
 
     configure_ldap_amqpsystem(fastramqpi, settings.ldap_amqp)
