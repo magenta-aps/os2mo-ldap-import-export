@@ -513,3 +513,9 @@ mutation employee_create($input: EmployeeCreateInput!) {
     uuid
   }
 }
+
+mutation address_create($input: AddressCreateInput!) {
+  address_create(input: $input) {
+    uuid
+  }
+}
