@@ -507,3 +507,9 @@ query read_all_ituser_user_keys_by_itsystem_uuid($itsystem_uuid: UUID!) {
     }
   }
 }
+
+mutation employee_create($input: EmployeeCreateInput!) {
+  employee_create(input: $input) {
+    uuid
+  }
+}
