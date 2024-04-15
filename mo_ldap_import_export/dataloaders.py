@@ -10,6 +10,7 @@ from enum import Enum
 from functools import partialmethod
 from functools import wraps
 from typing import Any
+from typing import Callable
 from typing import cast
 from typing import Literal
 from typing import Protocol
@@ -1506,10 +1507,37 @@ class DataLoader:
         )
         return cast(list[Any | None], create_results + edit_results + terminate_results)
 
-    async def create_object(self, obj: MOBase) -> Any:
+    async def create_employee(self, obj: Employee) -> Any:
         model_client = self.context["legacy_model_client"]
         result = cast(list[Any], await model_client.upload([obj]))
         return one(result)
+
+    async def create_address(self, obj: Address) -> Any:
+        model_client = self.context["legacy_model_client"]
+        result = cast(list[Any], await model_client.upload([obj]))
+        return one(result)
+
+    async def create_engagement(self, obj: Engagement) -> Any:
+        model_client = self.context["legacy_model_client"]
+        result = cast(list[Any], await model_client.upload([obj]))
+        return one(result)
+
+    async def create_ituser(self, obj: ITUser) -> Any:
+        model_client = self.context["legacy_model_client"]
+        result = cast(list[Any], await model_client.upload([obj]))
+        return one(result)
+
+    async def create_object(self, obj: MOBase) -> Any:
+        creator_map: dict[str, Callable] = {
+            "employee": self.create_employee,
+            "address": self.create_address,
+            "engagement": self.create_engagement,
+            "it": self.create_ituser,
+        }
+        creator = creator_map.get(obj.type_)  # type: ignore
+        if creator is None:
+            raise NotImplementedError("Unknown MOBase to create")
+        return await creator(obj)
 
     async def create(self, creates: list[MOBase]) -> list[Any]:
         tasks = [self.create_object(obj) for obj in creates]
