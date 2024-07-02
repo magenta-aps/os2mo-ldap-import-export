@@ -239,3 +239,43 @@ async def test_endpoint_mo2ldap_templating(
             False,
         ]
     }
+
+
+@pytest.mark.integration_test
+@pytest.mark.usefixtures("test_client", "ldap_dummy_data")
+async def test_create_ldap_person(
+    test_client: AsyncClient,
+    graphql_client: GraphQLClient,
+) -> None:
+    given_name = "John"
+    surname = "Hansen"
+    cpr_number = "0101700000"
+    # Create a person
+    person_result = await graphql_client._testing_user_create(
+        input=EmployeeCreateInput(
+            given_name=given_name,
+            surname=surname,
+            cpr_number=cpr_number,
+        )
+    )
+    person_uuid = person_result.uuid
+
+    @retry()
+    async def verify(person_uuid: UUID) -> None:
+        result = await test_client.get(f"/Inspect/mo/uuid2dn/{person_uuid}")
+        assert result.status_code == 200
+        dn = one(result.json())
+
+        result = await test_client.get(f"/Inspect/dn/{dn}")
+        assert result.status_code == 200
+        assert result.json() == {
+            "objectClass": ["inetOrgPerson"],
+            "dn": dn,
+            "cn": [given_name + " " + surname],
+            "employeeNumber": cpr_number,
+            "givenName": [given_name],
+            "sn": [surname],
+            "title": [str(person_uuid)],
+        }
+
+    await verify(person_uuid)
