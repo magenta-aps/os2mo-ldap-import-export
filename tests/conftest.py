@@ -5,7 +5,11 @@ import json
 import os
 from collections.abc import AsyncIterator
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
+from typing import Callable
+from typing import ContextManager
+from typing import Mapping
 from unittest.mock import AsyncMock
 from unittest.mock import create_autospec
 from unittest.mock import MagicMock
@@ -14,6 +18,7 @@ from uuid import uuid4
 import pytest
 import yaml
 from fastramqpi.ramqp import AMQPSystem
+from more_itertools import one
 from pydantic import AmqpDsn
 from pydantic import parse_obj_as
 from ramodels.mo.details.address import Address
@@ -25,6 +30,132 @@ from mo_ldap_import_export.config import ExternalAMQPConnectionSettings
 from mo_ldap_import_export.config import Settings
 from mo_ldap_import_export.ldap_classes import LdapObject
 from tests.graphql_mocker import GraphQLMocker
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "envvar(mapping): load the specified environmental variables"
+    )
+
+
+@pytest.fixture
+def set_environmental_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[Mapping[str, str]], ContextManager]:
+    """Environmental variable override fixture factory.
+
+    Example:
+        ```
+        @pytest.fixture
+        def set_specific_envvar(
+            set_environmental_variables: Callable[[Mapping[str, str]], ContextManager],
+        ) -> Iterator[None]:
+            envvars = {"MY_ENV_VAR": "MY_VALUE"}
+            with set_environmental_variables(envvars):
+                yield
+        ```
+
+    Args:
+        monkeypatch: The patcher to use for settings the environmental variables.
+
+    Returns:
+        Context manager used to override settings.
+    """
+
+    @contextmanager
+    def inner(environmental_variables: Mapping[str, str]) -> Iterator[None]:
+        """Environmental variable override context manager.
+
+        Args:
+            environmental_variables: Mapping of environmental variables to set.
+
+        Yields:
+            None, but keeps the settings overrides active.
+        """
+        with monkeypatch.context() as mpc:
+            for key, value in environmental_variables.items():
+                mpc.setenv(key, value)
+            yield
+
+    return inner
+
+
+@pytest.fixture(autouse=True)
+def load_marked_envvars(
+    set_environmental_variables: Callable[[Mapping[str, str]], ContextManager],
+    request: Any,
+) -> Iterator[None]:
+    """Fixture to inject environmental variable via pytest.marks.
+
+    Example:
+        ```
+        @pytest.mark.envvar({"VAR1": "1", "VAR2": 2})
+        @pytest.mark.envvar({"VAR3": "3"})
+        def test_load_marked_envvars() -> None:
+            assert os.environ.get("VAR1") == "1"
+            assert os.environ.get("VAR2") == "2"
+            assert os.environ.get("VAR3") == "3"
+            assert os.environ.get("VAR4") is None
+        ```
+
+    Args:
+        monkeypatch: The patcher to use for settings the environmental variables.
+        request: The pytest request object used to extract markers.
+
+    Yields:
+        None, but keeps the settings overrides active.
+    """
+    envvars: dict[str, str] = {}
+    for mark in request.node.iter_markers("envvar"):
+        if not mark.args:
+            pytest.fail("envvar mark must take an argument")
+        if len(mark.args) > 1:
+            pytest.fail("envvar mark must take at most one argument")
+        argument = one(mark.args)
+        if not isinstance(argument, Mapping):
+            pytest.fail("envvar mark argument must be a mapping")
+        if any(not isinstance(key, str) for key in argument.keys()):
+            pytest.fail("envvar mapping keys must be strings")
+        if any(not isinstance(value, str) for value in argument.values()):
+            pytest.fail("envvar mapping values must be strings")
+        envvars.update(**argument)
+    with set_environmental_variables(envvars):
+        yield
+
+
+@pytest.fixture
+def inject_environmental_variables(
+    set_environmental_variables: Callable[[Mapping[str, str]], ContextManager],
+    environmental_variables: Mapping[str, str],
+) -> Iterator[None]:
+    """Fixture to inject environmental variable via parametrization.
+
+    Example:
+        ```
+        @pytest.mark.parametrize(
+            "environmental_variables,key,expected",
+            [
+                ({}, "VAR1", None),
+                ({"VAR1": "1"}, "VAR1", "1"),
+                ({"VAR1": "2"}, "VAR1", "2"),
+                ({"VAR1": "2"}, "VAR2", None),
+                ({"VAR1": "2", "VAR2": "2"}, "VAR2", "2"),
+            ]
+        )
+        @pytest.mark.usefixtures("inject_environmental_variables")
+        def test_inject_envvars(key: str, expected: str) -> None:
+            assert os.environ.get(key) == expected
+        ```
+
+    Args:
+        monkeypatch: The patcher to use for settings the environmental variables.
+        environmental_variables: Mapping of environmental variables to set.
+
+    Yields:
+        None, but keeps the settings overrides active.
+    """
+    with set_environmental_variables(environmental_variables):
+        yield
 
 
 @pytest.fixture
@@ -51,7 +182,8 @@ def settings_overrides() -> Iterator[dict[str, str]]:
 
 @pytest.fixture
 def load_settings_overrides(
-    settings_overrides: dict[str, str], monkeypatch: pytest.MonkeyPatch
+    set_environmental_variables: Callable[[Mapping[str, str]], ContextManager],
+    settings_overrides: dict[str, str],
 ) -> Iterator[dict[str, str]]:
     """Fixture to set happy-path settings overrides as environmental variables.
 
@@ -65,10 +197,8 @@ def load_settings_overrides(
     Yields:
         Minimal set of overrides.
     """
-    for key, value in settings_overrides.items():
-        if os.environ.get(key) is None:
-            monkeypatch.setenv(key, value)
-    yield settings_overrides
+    with set_environmental_variables(settings_overrides):
+        yield settings_overrides
 
 
 @pytest.fixture
@@ -95,12 +225,12 @@ def minimal_mapping() -> dict[str, Any]:
 
 @pytest.fixture
 def minimal_valid_environmental_variables(
+    set_environmental_variables: Callable[[Mapping[str, str]], ContextManager],
     load_settings_overrides: dict[str, str],
     minimal_mapping: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[None]:
-    with monkeypatch.context() as mpc:
-        mpc.setenv("CONVERSION_MAPPING", json.dumps(minimal_mapping))
+    envvars = {"CONVERSION_MAPPING": json.dumps(minimal_mapping)}
+    with set_environmental_variables(envvars):
         yield
 
 
