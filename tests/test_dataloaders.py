@@ -1760,7 +1760,7 @@ async def test_make_mo_employee_dn_no_cpr(dataloader: MagicMock) -> None:
     )
 
 
-def test_extract_unique_objectGUIDs(dataloader: DataLoader):
+def test_extract_unique_objectGUIDs(dataloader: DataLoader) -> None:
     ad_it_user_1 = ITUser.from_simplified_fields(
         str(uuid4()),
         uuid4(),
