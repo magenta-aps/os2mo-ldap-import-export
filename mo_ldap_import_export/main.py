@@ -138,17 +138,19 @@ async def handle_engagement(
     amqpsystem: depends.AMQPSystem,
 ) -> None:
     result = await graphql_client.read_engagement_employee_uuid(object_uuid)
-    try:
-        obj = one(result.objects)
-    except ValueError as error:
-        logger.warning("Unable to lookup engagement", uuid=object_uuid)
-        raise RejectMessage("Unable to lookup engagement") from error
-
-    if obj.current is None:
-        logger.warning("Engagement not currently active", uuid=object_uuid)
-        raise RejectMessage("Engagement not currently active")
-
-    person_uuid = obj.current.employee_uuid
+    person_uuids = {
+        validity.employee_uuid for obj in result.objects for validity in obj.validities
+    }
+    # In theory an engagement could change its employee uuid during its duration,
+    # however trying to do so with either the ServiceAPIs /service/details/edit endpoint
+    # or via the GraphQL engagement_update mutator yields a result as if it was changed,
+    # but no change is in fact every written.
+    # This should probably be changed in MO such that it is either an error, or such
+    # that the employee uuid is actually changed. If we decide to actually allow it to
+    # change, this code should send out all person_uuids instead of asserting that there
+    # is only one, but for now we assert our assumptions, as we assume we actually wish
+    # for MO to disallow moving an engagement between people.
+    person_uuid = one(person_uuids)
     # TODO: Add support for refreshing persons with a certain engagement directly
     await graphql_client.employee_refresh(amqpsystem.exchange_name, [person_uuid])
 
