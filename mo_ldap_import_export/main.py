@@ -25,6 +25,7 @@ from fastramqpi.ramqp.utils import RejectMessage
 from fastramqpi.ramqp.utils import RequeueMessage
 from ldap3 import Connection
 from more_itertools import one
+from more_itertools import only
 
 from mo_ldap_import_export.ldapapi import LDAPAPI
 from mo_ldap_import_export.moapi import MOAPI
@@ -150,7 +151,10 @@ async def handle_engagement(
     # change, this code should send out all person_uuids instead of asserting that there
     # is only one, but for now we assert our assumptions, as we assume we actually wish
     # for MO to disallow moving an engagement between people.
-    person_uuid = one(person_uuids)
+    person_uuid = only(person_uuids)
+    if person_uuid is None:
+        logger.warning("Unable to lookup Engagement", uuid=object_uuid)
+        return
     # TODO: Add support for refreshing persons with a certain engagement directly
     await graphql_client.employee_refresh(amqpsystem.exchange_name, [person_uuid])
 
