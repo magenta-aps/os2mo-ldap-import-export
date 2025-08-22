@@ -3,7 +3,6 @@
 import asyncio
 from contextlib import suppress
 from typing import Any
-from typing import cast
 
 import structlog
 from ldap3 import BASE
@@ -265,16 +264,17 @@ class LDAPAPI:
             )
         return LDAPUUID(uuid)
 
-    async def convert_ldap_uuids_to_dns(self, ldap_uuids: set[LDAPUUID]) -> set[DN]:
+    async def convert_ldap_uuids_to_dns(
+        self, ldap_uuids: set[LDAPUUID]
+    ) -> dict[LDAPUUID, DN | None]:
         try:
             async with asyncio.TaskGroup() as tg:
                 tasks = [tg.create_task(self.get_ldap_dn(uuid)) for uuid in ldap_uuids]
         except Exception as e:
             raise ValueError("Exceptions during UUID2DN translation") from e
 
-        results = {task.result() for task in tasks}
-        results.discard(None)
-        return cast(set[DN], results)
+        results = [task.result() for task in tasks]
+        return dict(zip(ldap_uuids, results, strict=True))
 
     async def dn2cpr(self, dn: DN) -> CPRNumber | None:
         if self.settings.ldap_cpr_attribute is None:
