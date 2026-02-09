@@ -140,6 +140,7 @@ async def test_to_mo(
         **mo_engagement,
         "user_key": title,
         "extension_1": title,
+        "validity": {"from_": mo_today(), "to": None},
     }
     async for attempt in retrying():
         with attempt:
@@ -157,6 +158,7 @@ async def test_to_mo(
         **mo_engagement,
         "user_key": title,
         "extension_1": title,
+        "validity": {"from_": mo_today(), "to": None},
     }
     async for attempt in retrying():
         with attempt:
@@ -461,5 +463,5 @@ async def test_to_mo_future_engagement_new_mapping(
     engagement = one(engagements.objects)
     validities = one(engagement.validities)
     assert validities.extension_1 == "Skole underviser"
-    assert validities.validity.from_ == datetime(3000, 1, 1, 0, 0, tzinfo=MO_TZ)
-    assert validities.validity.to == datetime(4000, 1, 1, 0, 0, tzinfo=MO_TZ)
+    assert validities.validity.from_ == mo_today()
+    assert validities.validity.to is None
