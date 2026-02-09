@@ -596,13 +596,17 @@ class SyncTool:
                 logger.info("Skipping object", field="terminate", dn=dn)
                 return
             if termination_date_str:
-                termination_date = datetime.fromisoformat(termination_date_str)
-                # MO requires dates to be at midnight :)
+                # The template's termination date can be any timezone, but MO
+                # requires dates to be at midnight in Danish time. If the
+                # template does not specify a timezone, this will assume Danish
+                # time.
+                # TODO: enforce explicit timezone from template string.
+                template_termination_date = datetime.fromisoformat(termination_date_str)
+                danish_termination_date = template_termination_date.astimezone(MO_TZ)
                 termination_date = datetime.combine(
-                    date=termination_date,
+                    date=danish_termination_date,
                     time=time.min,
-                    # TODO: enforce timezone from template
-                    tzinfo=termination_date.tzinfo or MO_TZ,
+                    tzinfo=danish_termination_date.tzinfo,
                 )
 
         # Handle creates
