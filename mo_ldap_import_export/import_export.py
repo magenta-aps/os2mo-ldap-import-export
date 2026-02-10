@@ -32,12 +32,12 @@ from .customer_specific_checks import ExportChecks
 from .dataloaders import DN
 from .dataloaders import DataLoader
 from .dataloaders import NoGoodLDAPAccountFound
-from .exceptions import AcknowledgeException
 from .exceptions import DryRunException
 from .exceptions import EmptyFieldsToSynchronise
 from .exceptions import IncorrectMapping
 from .exceptions import InvalidCPR
 from .exceptions import NoObjectsReturnedException
+from .exceptions import SingleDayIntervalException
 from .exceptions import SkipObject
 from .ldap import apply_discriminator
 from .ldap import filter_dns
@@ -618,6 +618,9 @@ class SyncTool:
             except SkipObject:
                 logger.info("Skipping object", dn=dn)
                 return
+            except SingleDayIntervalException:
+                logger.info("SingleDayIntervalException", dn=dn)
+                return
 
             logger.info(
                 "Importing object", verb=Verb.CREATE, obj=converted_object, dn=dn
@@ -667,6 +670,9 @@ class SyncTool:
             raise
         except SkipObject:  # pragma: no cover
             logger.info("Skipping object", dn=dn)
+            return
+        except SingleDayIntervalException:
+            logger.info("SingleDayIntervalException", dn=dn)
             return
 
         mo_attributes = set(mapping.get_fields().keys())
@@ -749,7 +755,7 @@ class SyncTool:
             # TODO(#61435): MO does not support objects with a validity less
             # than a day.
             if termination_date and termination_date - mo_today() <= timedelta(days=1):
-                raise AcknowledgeException(
+                raise SingleDayIntervalException(
                     "MO does not support objects with a validity less than a day"
                 )
 
