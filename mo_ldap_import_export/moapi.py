@@ -354,7 +354,7 @@ class MOAPI:
             name=entry.name,
             parent=entry.parent.uuid if entry.parent is not None else None,
             unit_type=entry.unit_type.uuid,
-            validity=models.Validity(
+            validity=models.Validity.from_mo(
                 start=entry.validity.from_,
                 end=entry.validity.to,
             ),
@@ -444,7 +444,7 @@ class MOAPI:
             person=entry.employee_uuid,
             org_unit=None,
             engagements=entry.engagement_uuids,
-            validity=models.Validity(
+            validity=models.Validity.from_mo(
                 start=entry.validity.from_,
                 end=entry.validity.to,
             ),
@@ -462,11 +462,15 @@ class MOAPI:
         entry = extract_current_or_latest_validity(result.validities)
         if entry is None:  # pragma: no cover
             return None
+        # Facets and Classes are allowed a None start date according to MOs
+        # GraphQL schema. If that actually ever happens we should fix the
+        # typing of our internal Validity model.
+        assert entry.validity.from_ is not None
         return ITSystem(
             uuid=entry.uuid,
             user_key=entry.user_key,
             name=entry.name,
-            validity=models.Validity(
+            validity=models.Validity.from_mo(
                 start=entry.validity.from_,
                 end=entry.validity.to,
             ),
@@ -483,6 +487,10 @@ class MOAPI:
         entry = extract_current_or_latest_validity(result.validities)
         if entry is None:  # pragma: no cover
             return None
+        # Facets and Classes are allowed a None start date according to MOs
+        # GraphQL schema. If that actually ever happens we should fix the
+        # typing of our internal Validity model.
+        assert entry.validity.from_ is not None
         return Class(
             uuid=entry.uuid,
             user_key=entry.user_key,
@@ -493,7 +501,7 @@ class MOAPI:
             facet=extract_relation(entry.facet),
             parent=extract_relation(entry.parent),
             it_system=extract_relation(entry.it_system),
-            validity=models.Validity(
+            validity=models.Validity.from_mo(
                 start=entry.validity.from_,
                 end=entry.validity.to,
             ),
@@ -530,7 +538,7 @@ class MOAPI:
             engagement=entry.engagement_uuid,
             ituser=entry.ituser_uuid,
             visibility=entry.visibility_uuid,
-            validity=models.Validity(
+            validity=models.Validity.from_mo(
                 start=entry.validity.from_,
                 end=entry.validity.to,
             ),

@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Magenta ApS <https://magenta.dk>
 # SPDX-License-Identifier: MPL-2.0
 from datetime import datetime
+from datetime import time
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 from uuid import uuid4
@@ -24,6 +26,21 @@ class StrictBaseModel(BaseModel):
 class Validity(StrictBaseModel):
     start: datetime
     end: datetime | None
+
+    @classmethod
+    def from_mo(cls, start: datetime, end: datetime | None) -> "Validity":
+        # TODO (#61435): MOs GraphQL subtracts one day from the validity end
+        # dates when reading, compared to what was written. This breaks
+        # comparisons and leads to infinite synchronisation loops.
+        # We want to use sane datetimes in the internal models and only convert
+        # to insane (mo) datetime semantics on the boundary.
+        if end is not None:
+            assert end.time() == time.min
+            end += timedelta(days=1)
+        return Validity(
+            start=start,
+            end=end,
+        )
 
 
 class Address(StrictBaseModel):
