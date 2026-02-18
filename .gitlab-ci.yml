@@ -81,7 +81,75 @@ Integration-test:
   extends:
     - .integration-test:mo
   services:
-    - !reference [.integration-test:mo, services]
+    - !reference [.services:mo-backing, services]
+    - name: quay.io/564bff00ff/os2mo:off-by-zero-1
+      alias: mo
+      # NOTE: These variables are duplicated from .variables:mo.variables above.
+      # Ideally, we would simply `!reference [ .variables:mo, variables ]` to avoid
+      # duplication, but while that works for the GitLab CI pipeline *in this repo*,
+      # it DOES NOT work in other repos which `include` the template and extend it.
+      # This is because `!reference` actually imports the referenced values as a
+      # (nested) LIST and depends on the fact that most tags (such as `script`) know
+      # how to unflatten the nested lists (up to a limit of 10). The `variables` tag
+      # has bad support for this un-nesting, and therefore does not work properly when
+      # we have too many layers of references and nested lists. Therefore:
+      # YOU CANNOT REFACTOR THIS AND ASSUME IT WORKS IF THE PIPELINE HERE IS GREEN!
+      # https://gitlab.com/gitlab-org/gitlab/-/issues/434157
+      variables:
+        # https://docs.python.org/3/library/devmode.html
+        PYTHONDEVMODE: "1"
+        PYTHONMALLOC: "default"
+
+        DB_HOST: "mox-db"
+        DB_NAME: "mox"
+        DB_USER: "mox"
+        DB_PASSWORD: "mox"
+
+        KEYCLOAK_SCHEMA: "http"
+        KEYCLOAK_PORT: 8080
+        KEYCLOAK_AUTH_SERVER_URL: "http://keycloak:8080/auth/"
+        KEYCLOAK_VERIFY_AUDIENCE: "false"
+
+        ENVIRONMENT: "testing"
+        LORA_AUTH: "false"
+        INSECURE_ENABLE_TESTING_API: "true"
+
+        AMQP_ENABLE: "true"
+        AMQP_URL: "amqp://guest:guest@msg-broker:5672/"
+      entrypoint:
+        - "sh"
+        - "-c"
+        - |
+          while ! ./docker/start.sh; do
+            sleep 1
+          done
+    - name: magentaaps/os2mo-init:5
+      variables:
+        CONFIG_FILE: $OS2MO_INIT_CONFIG
+        MO_URL: "http://mo:5000"
+        CLIENT_ID: "dipex"
+        CLIENT_SECRET: "603f1c82-d012-4d04-9382-dbe659c533fb"
+        AUTH_SERVER: "http://keycloak:8080/auth"
+        AUTH_REALM: "mo"
+      entrypoint:
+        - "sh"
+        - "-c"
+        - |
+          if [ -n "$OS2MO_INIT_CONFIG" ]; then
+            while ! python -m os2mo_init; do
+              sleep 1
+            done
+          else
+            echo 'OS2MO_INIT_CONFIG is empty: Skipping OS2mo-init'
+          fi
+          touch /builds/.os2mo-init-finished
+    - name: postgres:18
+      alias: db
+      command: ["postgres", "-c", "port=54321"]
+      variables:
+        POSTGRES_USER: "fastramqpi"
+        POSTGRES_PASSWORD: "fastramqpi"
+        POSTGRES_DB: "fastramqpi"
     - name: osixia/openldap:1.5.0
       alias: ldap
       command: ["--copy-service", "--loglevel", "debug"]
