@@ -144,3 +144,5 @@ async def test_validity_expansion(
        },
     }
     assert await get_address() == expected
+
+    assert False

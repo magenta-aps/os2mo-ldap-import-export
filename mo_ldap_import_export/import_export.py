@@ -708,6 +708,10 @@ class SyncTool:
         if not update_values:
             logger.info("Converted object is identical to existing object, skipping")
             return
+        print(mo_object_dict_to_upload["user_key"])
+        print(converted_mo_object_dict["user_key"])
+        print(update_values)
+
         # MO does not support only extending an object's validity -- you must
         # change something else too, or LoRa will just throw the change away.
         if update_values.keys() == {"validity"}:
