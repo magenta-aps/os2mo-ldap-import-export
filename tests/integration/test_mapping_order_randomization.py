@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Magenta ApS <https://magenta.dk>
 # SPDX-License-Identifier: MPL-2.0
-"""Prove that ldap_to_mo[_any] field evaluation does not follow input order."""
+"""Prove that ldap_to_mo[_any] field evaluation is order-independent."""
 
 import json
 
@@ -36,7 +36,7 @@ from mo_ldap_import_export.types import LDAPUUID
     }
 )
 @pytest.mark.usefixtures("ldap_person", "mo_person")
-async def test_ldap_to_mo_sync_behavior_does_not_follow_input_order(
+async def test_ldap_to_mo_sync_behavior_is_order_independent(
     test_client: AsyncClient,
     context: Context,
     ldap_person_uuid: LDAPUUID,
@@ -49,24 +49,21 @@ async def test_ldap_to_mo_sync_behavior_does_not_follow_input_order(
     mapping = settings.conversion_mapping.ldap_to_mo["ITUser"]
 
     # Move `itsystem` (requeue) to be before `person` (skip) in the Pydantic dict order.
-    # This order ensures that the synchronization yields requeueing instead of skipping
+    # This order ensures that the synchronization yields skipping instead of requeueing
     # behavior, by reproducing an issue from Pydantic v1 where `Extra.allow` fields are
     # collected via set-iteration and thus ordered by `hash` subject to PYTHONHASHSEED.
-    # Thus the order forced here is only introduced for determinism, as without it
-    # the test becomes flaky (subject to the PYTHONHASHSEED generated at start-up).
-    # To see it fail without this code, simply comment out the for-loop and run:
-    #
-    #     PYTHONHASHSEED=5 pytest tests/integration/test_mapping_order_randomization.py
+    # As all fields are now evaluated unconditionally, the order no longer matters.
+    # However the loop is kept as a guard against regressions.
     for key in ["itsystem", "person"]:
         mapping.__dict__[key] = mapping.__dict__.pop(key)
 
-    # Trigger synchronization and see that requeue is raised instead of skipping
+    # Trigger synchronization and see that skip is raised instead of requeueing
     response = await test_client.post(
         "/ldap2mo/uuid",
         json={"subject": str(ldap_person_uuid), "priority": 1},
     )
-    assert response.status_code == 409, response.text
-    assert response.json() == {"detail": "Requeueing: Object is None"}
+    assert response.status_code == 200, response.text
+    assert response.json() is None
 
 
 @pytest.mark.integration_test
@@ -94,7 +91,7 @@ async def test_ldap_to_mo_sync_behavior_does_not_follow_input_order(
     }
 )
 @pytest.mark.usefixtures("ldap_person", "mo_person")
-async def test_ldap_to_mo_any_sync_behavior_does_not_follow_input_order(
+async def test_ldap_to_mo_any_sync_behavior_is_order_independent(
     test_client: AsyncClient,
     context: Context,
     ldap_person_uuid: LDAPUUID,
@@ -106,10 +103,10 @@ async def test_ldap_to_mo_any_sync_behavior_does_not_follow_input_order(
     for key in ["itsystem", "person"]:
         mapping.__dict__[key] = mapping.__dict__.pop(key)
 
-    # Trigger synchronization and see that requeue is raised instead of skipping
+    # Trigger synchronization and see that skip is raised instead of requeueing
     response = await test_client.post(
         "/ldap2mo/uuid",
         json={"subject": str(ldap_person_uuid), "priority": 1},
     )
-    assert response.status_code == 409, response.text
-    assert response.json() == {"detail": "Requeueing: Object is None"}
+    assert response.status_code == 200, response.text
+    assert response.json() is None

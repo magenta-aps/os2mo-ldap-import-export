@@ -111,6 +111,8 @@ def get_required_attributes(mo_class) -> set[str]:
 
 
 class LDAP2MOMapping(MappingBaseModel):
+    # WARNING: `Extra.allow` extras land in `__dict__` via `set` iteration, so
+    # `get_fields()` order is hash-randomized per process. Do not rely on it.
     class Config:
         extra = Extra.allow
 

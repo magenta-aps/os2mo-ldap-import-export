@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: Magenta ApS <https://magenta.dk>
 # SPDX-License-Identifier: MPL-2.0
+import asyncio
 import json
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -17,6 +18,7 @@ import structlog
 from fastapi.encoders import jsonable_encoder
 from fastramqpi.ramqp.depends import handle_exclusively_decorator
 from ldap3 import Connection
+from more_itertools import first
 from more_itertools import one
 from more_itertools import only
 from structlog.contextvars import bound_contextvars
@@ -39,6 +41,7 @@ from .exceptions import EmptyFieldsToSynchronise
 from .exceptions import IncorrectMapping
 from .exceptions import InvalidCPR
 from .exceptions import NoObjectsReturnedException
+from .exceptions import RequeueException
 from .exceptions import SingleDayIntervalException
 from .exceptions import SkipObject
 from .ldap import apply_discriminator
@@ -752,13 +755,30 @@ class SyncTool:
         mo_class: type[MOBase],
         termination_date: datetime | None,
     ) -> MOBase:
-        # TODO: asyncio.gather this for future dataloader bulking
+        fields = list(mapping.get_fields().items())
+        results = await asyncio.gather(
+            *(
+                self.converter.render_template(name, template, context)
+                for name, template in fields
+            ),
+            return_exceptions=True,
+        )
         mo_dict = {
-            mo_field_name: await self.converter.render_template(
-                mo_field_name, template_str, context
-            )
-            for mo_field_name, template_str in mapping.get_fields().items()
+            name: value for (name, template), value in zip(fields, results, strict=True)
         }
+
+        # If a skip was requested, we skip
+        skips = [e for e in results if isinstance(e, SkipObject)]
+        if skips:
+            raise first(skips)
+        # If a requeue was requested, and we did not skip, we requeue
+        requeues = [e for e in results if isinstance(e, RequeueException)]
+        if requeues:
+            raise first(requeues)
+        # If we got any other exception, raise it
+        exceptions = [r for r in results if isinstance(r, BaseException)]
+        if exceptions:
+            raise first(exceptions)
 
         required_attributes = get_required_attributes(mo_class)
 
