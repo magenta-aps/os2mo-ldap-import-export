@@ -525,6 +525,8 @@ class SyncTool:
         template_context: dict[str, Any],
         dry_run: bool,
     ) -> None:
+        """Import an entity, fanning out via `_for_each_` if configured."""
+
         def convert_value(value: Any) -> Any:
             if not is_list(value):
                 return value
@@ -538,7 +540,33 @@ class SyncTool:
             key: convert_value(value) for key, value in ldap_object.dict().items()
         }
         context = {"ldap": ldap_dict, **template_context}
-        return await self.import_single_entity(mapping, ldap_object, context, dry_run)
+
+        # No for_each mapping, simply call through once without setting `each`
+        if mapping.for_each is None:
+            return await self.import_single_entity(
+                mapping, ldap_object, context, dry_run
+            )
+
+        # At this point we have a for_each mapping, evaluate the template, then verify
+        # that it is a list, then call the handler for each entity in the list.
+        try:
+            for_each = await self.converter.render_template(
+                "for_each", mapping.for_each, context
+            )
+        except SkipObject:  # pragma: no cover
+            logger.info("Skipping object", field="for_each")
+            return
+
+        if not isinstance(for_each, list):
+            raise IncorrectMapping(
+                f"'_for_each_' template must render to a list, got {type(for_each)}: {for_each}"
+            )
+
+        logger.info("Iterating mapping via _for_each_", count=len(for_each))
+        for each in for_each:
+            await self.import_single_entity(
+                mapping, ldap_object, {**context, "each": each}, dry_run
+            )
 
     @handle_exclusively_decorator(
         key=lambda self, mapping, ldap_object, template_context, dry_run: ldap_object.dn
