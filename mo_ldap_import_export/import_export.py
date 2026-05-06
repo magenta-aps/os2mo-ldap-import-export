@@ -525,9 +525,20 @@ class SyncTool:
         template_context: dict[str, Any],
         dry_run: bool,
     ) -> None:
-        return await self.import_single_entity(
-            mapping, ldap_object, template_context, dry_run
-        )
+        def convert_value(value: Any) -> Any:
+            if not is_list(value):
+                return value
+            # If the value is a single element list, return the contents
+            if len(value) == 1:
+                return one(value)
+            # Otherwise simply return the list
+            return value
+
+        ldap_dict = {
+            key: convert_value(value) for key, value in ldap_object.dict().items()
+        }
+        context = {"ldap": ldap_dict, **template_context}
+        return await self.import_single_entity(mapping, ldap_object, context, dry_run)
 
     @handle_exclusively_decorator(
         key=lambda self, mapping, ldap_object, template_context, dry_run: ldap_object.dn
@@ -571,19 +582,7 @@ class SyncTool:
             loaded_object=ldap_object,
         )
 
-        def convert_value(value: Any) -> Any:
-            if not is_list(value):
-                return value
-            # If the value is a single element list, return the contents
-            if len(value) == 1:
-                return one(value)
-            # Otherwise simply return the list
-            return value
-
-        ldap_dict = {
-            key: convert_value(value) for key, value in ldap_object.dict().items()
-        }
-        context = {"ldap": ldap_dict, **template_context}
+        context = template_context
 
         try:
             # Pydantic validator ensures that uuid is set here
