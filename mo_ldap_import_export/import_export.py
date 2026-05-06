@@ -487,7 +487,7 @@ class SyncTool:
         # The template author should make sure to define objects in order, so
         # dependencies exist before their dependent objects.
         for json_key in json_keys:
-            await self.import_single_entity(
+            await self.import_entity(
                 self.get_mapping(json_key),
                 ldap_object,
                 template_context,
@@ -514,9 +514,20 @@ class SyncTool:
         logger.info("Importing object class")
         mappings = self.settings.conversion_mapping.ldap_to_mo_any[object_class]
         for mapping in mappings:
-            await self.import_single_entity(
+            await self.import_entity(
                 mapping, ldap_object, template_context={}, dry_run=False
             )
+
+    async def import_entity(
+        self,
+        mapping: LDAP2MOMapping,
+        ldap_object: LdapObject,
+        template_context: dict[str, Any],
+        dry_run: bool,
+    ) -> None:
+        return await self.import_single_entity(
+            mapping, ldap_object, template_context, dry_run
+        )
 
     @handle_exclusively_decorator(
         key=lambda self, mapping, ldap_object, template_context, dry_run: ldap_object.dn
