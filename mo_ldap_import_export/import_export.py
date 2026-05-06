@@ -582,12 +582,10 @@ class SyncTool:
             loaded_object=ldap_object,
         )
 
-        context = template_context
-
         try:
             # Pydantic validator ensures that uuid is set here
             uuid_str = await self.converter.render_template(
-                "uuid", mapping.uuid, context
+                "uuid", mapping.uuid, template_context
             )
         except SkipObject:
             logger.info("Skipping object", field="uuid", dn=dn)
@@ -603,7 +601,7 @@ class SyncTool:
         if mapping.terminate:
             try:
                 termination_date_str = await self.converter.render_template(
-                    "terminate", mapping.terminate, context
+                    "terminate", mapping.terminate, template_context
                 )
             except SkipObject:  # pragma: no cover
                 logger.info("Skipping object", field="terminate", dn=dn)
@@ -626,7 +624,7 @@ class SyncTool:
         if mo_object is None:
             try:
                 converted_object = await self._create_converted_object(
-                    mapping, context, mo_class, termination_date
+                    mapping, template_context, mo_class, termination_date
                 )
             except SkipObject:
                 logger.info("Skipping object", dn=dn)
@@ -674,7 +672,7 @@ class SyncTool:
         # Handle updates
         try:
             converted_object = await self._create_converted_object(
-                mapping, context, mo_class, termination_date
+                mapping, template_context, mo_class, termination_date
             )
         except EmptyFieldsToSynchronise:
             # Empty fields are okay if the template just wanted to terminate
