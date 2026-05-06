@@ -553,13 +553,11 @@ class SyncTool:
             not missing_attributes
         ), f"ldap_object missing required attributes: {missing_attributes}"
 
-        loaded_object = ldap_object
-
         logger.info(
             "Loaded object",
             mo_class=mapping.as_mo_class(),
             dn=dn,
-            loaded_object=loaded_object,
+            loaded_object=ldap_object,
         )
 
         def convert_value(value: Any) -> Any:
@@ -572,7 +570,7 @@ class SyncTool:
             return value
 
         ldap_dict = {
-            key: convert_value(value) for key, value in loaded_object.dict().items()
+            key: convert_value(value) for key, value in ldap_object.dict().items()
         }
         context = {"ldap": ldap_dict, **template_context}
 
