@@ -78,6 +78,7 @@ from ..models import ITUser
 from ..models import OrganisationUnit
 from ..types import DN
 from ..types import LDAPUUID
+from ..types import CPRNumber
 from ..types import EmployeeUUID
 from ..types import EngagementUUID
 from ..types import OrgUnitUUID
@@ -750,13 +751,18 @@ async def get_facet_uuid(
     return obj.uuid if obj else None
 
 
+async def get_engagement_uuids(
+    graphql_client: GraphQLClient, filter: dict[str, Any]
+) -> set[UUID]:
+    engagement_filter = parse_obj_as(EngagementFilter, filter)
+    result = await graphql_client.read_engagement_uuid(engagement_filter)
+    return {obj.uuid for obj in result.objects}
+
+
 async def get_engagement_uuid(
     graphql_client: GraphQLClient, filter: dict[str, Any]
 ) -> UUID | None:
-    engagement_filter = parse_obj_as(EngagementFilter, filter)
-    result = await graphql_client.read_engagement_uuid(engagement_filter)
-    obj = only(result.objects)
-    return obj.uuid if obj else None
+    return only(await get_engagement_uuids(graphql_client, filter))
 
 
 async def get_org_unit_uuid(
@@ -913,6 +919,14 @@ async def get_person_dn(dataloader: DataLoader, uuid: EmployeeUUID) -> DN | None
     with suppress(NoGoodLDAPAccountFound):
         return await dataloader._find_best_dn(uuid)
     return None
+
+
+async def get_ldap_attribute_values_by_cpr(
+    ldapapi: LDAPAPI, cpr: str, attribute: str
+) -> set[str]:
+    """Return the values of ``attribute`` across LDAP accounts with the given CPR."""
+    objects = await ldapapi.cpr2dns(CPRNumber(cpr), {attribute})
+    return {value for obj in objects for value in getattr(obj, attribute, [])}
 
 
 def skip_if_none(obj: T | None) -> T:
@@ -1227,10 +1241,14 @@ def construct_globals_dict(
         "get_class_uuid": partial(get_class_uuid, graphql_client),
         "get_facet_uuid": partial(get_facet_uuid, graphql_client),
         "get_engagement_uuid": partial(get_engagement_uuid, graphql_client),
+        "get_engagement_uuids": partial(get_engagement_uuids, graphql_client),
         "get_org_unit_uuid": partial(get_org_unit_uuid, graphql_client),
         "get_employment_interval": partial(get_employment_interval, graphql_client),
         "get_manager_person_uuid": partial(get_manager_person_uuid, graphql_client),
         "get_person_dn": partial(get_person_dn, dataloader),
+        "get_ldap_attribute_values_by_cpr": partial(
+            get_ldap_attribute_values_by_cpr, dataloader.ldapapi
+        ),
         "mo_itusers": partial(mo_itusers, graphql_client),
         "mo_addresses": partial(mo_addresses, graphql_client),
         "dn_to_uuid": dataloader.ldapapi.get_ldap_unique_ldap_uuid,
