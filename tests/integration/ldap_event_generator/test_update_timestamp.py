@@ -1,7 +1,5 @@
 # SPDX-FileCopyrightText: Magenta ApS <https://magenta.dk>
 # SPDX-License-Identifier: MPL-2.0
-from datetime import UTC
-from datetime import datetime
 from typing import cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -18,18 +16,17 @@ from mo_ldap_import_export.ldap_event_generator import LDAPEventGenerator
 from mo_ldap_import_export.types import LDAPUUID
 
 
-async def get_last_run(
+async def get_last_run_cookie(
     sessionmaker: async_sessionmaker[AsyncSession], search_base: str
-) -> datetime | None:
+) -> bytes | None:
     async with sessionmaker() as session, session.begin():
-        # Get last run time from database for updating
+        # Get last run cookie from database for updating
         last_run = await session.scalar(
             select(LastRun).where(LastRun.search_base == search_base)
         )
         if last_run is None:
             return None
-        assert last_run.datetime is not None
-        return last_run.datetime
+        return last_run.cookie
 
 
 async def num_last_run_entries(sessionmaker: async_sessionmaker[AsyncSession]) -> int:
@@ -44,10 +41,8 @@ async def num_last_run_entries(sessionmaker: async_sessionmaker[AsyncSession]) -
     {"LISTEN_TO_CHANGES_IN_LDAP": "False"}
 )
 @pytest.mark.usefixtures("test_client")
-async def test_update_timestamp_postgres(context: Context) -> None:
+async def test_update_cookie_postgres(context: Context) -> None:
     sessionmaker = context["sessionmaker"]
-
-    test_start = datetime.now(UTC)
 
     event_generator = LDAPEventGenerator(
         sessionmaker=sessionmaker,
@@ -55,36 +50,42 @@ async def test_update_timestamp_postgres(context: Context) -> None:
         graphql_client=AsyncMock(),
         ldap_connection=AsyncMock(),
     )
+
+    # Mock poll to return different cookies each time
+    cookie_counter = [0]
+
+    def mock_poll(*_, **__):
+        cookie_counter[0] += 1
+        cookie = f"cookie_{cookie_counter[0]}".encode()
+        return ({cast(LDAPUUID, uuid4())}, cookie)
+
     event_generator.poll = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda *_, **__: ({cast(LDAPUUID, uuid4())}, datetime.now())
+        side_effect=mock_poll
     )
 
     for count, search_base in enumerate(["dc=ad0", "dc=ad1", "dc=ad2"]):
         assert await num_last_run_entries(sessionmaker) == count
 
-        last_run = await get_last_run(sessionmaker, search_base)
-        assert last_run is None
+        last_run_cookie = await get_last_run_cookie(sessionmaker, search_base)
+        assert last_run_cookie is None
 
         await event_generator._generate_events(search_base)
-        first_run = await get_last_run(sessionmaker, search_base)
-        assert first_run is not None
-        assert first_run > test_start
+        first_cookie = await get_last_run_cookie(sessionmaker, search_base)
+        assert first_cookie is not None
         assert await num_last_run_entries(sessionmaker) == count + 1
 
         await event_generator._generate_events(search_base)
-        last_run = await get_last_run(sessionmaker, search_base)
-        assert last_run is not None
-        assert last_run > first_run
+        last_cookie = await get_last_run_cookie(sessionmaker, search_base)
+        assert last_cookie is not None
+        assert last_cookie != first_cookie  # Cookie should change
         assert await num_last_run_entries(sessionmaker) == count + 1
 
 
 @pytest.mark.integration_test
 @pytest.mark.envvar({"LISTEN_TO_CHANGES_IN_LDAP": "False"})
 @pytest.mark.usefixtures("test_client")
-async def test_update_timestamp_no_changes(context: Context) -> None:
+async def test_update_cookie_no_changes(context: Context) -> None:
     sessionmaker = context["sessionmaker"]
-
-    test_start = datetime.now(UTC)
 
     event_generator = LDAPEventGenerator(
         sessionmaker=sessionmaker,
@@ -95,20 +96,23 @@ async def test_update_timestamp_no_changes(context: Context) -> None:
 
     search_base = "dc=ad0"
 
-    last_run = await get_last_run(sessionmaker, search_base)
-    assert last_run is None
+    last_run_cookie = await get_last_run_cookie(sessionmaker, search_base)
+    assert last_run_cookie is None
 
+    # First call - should set initial cookie
+    initial_cookie = b"initial_cookie"
     event_generator.poll = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda *_, **__: ({cast(LDAPUUID, uuid4())}, datetime.now())
+        side_effect=lambda *_, **__: ({cast(LDAPUUID, uuid4())}, initial_cookie),
     )
     await event_generator._generate_events(search_base)
-    first_run = await get_last_run(sessionmaker, search_base)
-    assert first_run is not None
-    assert first_run > test_start
+    first_cookie = await get_last_run_cookie(sessionmaker, search_base)
+    assert first_cookie is not None
+    assert first_cookie == initial_cookie
 
+    # Second call with same cookie - should not change
     event_generator.poll = AsyncMock(  # type: ignore[method-assign]
-        side_effect=lambda *_, **__: (set(), None),
+        side_effect=lambda *_, **__: (set(), initial_cookie),
     )
     await event_generator._generate_events(search_base)
-    last_run = await get_last_run(sessionmaker, search_base)
-    assert last_run == first_run
+    last_cookie = await get_last_run_cookie(sessionmaker, search_base)
+    assert last_cookie == first_cookie

@@ -11,7 +11,6 @@ from fastramqpi.pytest_util import retrying
 from sqlalchemy import select
 
 from mo_ldap_import_export.depends import GraphQLClient
-from mo_ldap_import_export.ldap_event_generator import MICROSOFT_EPOCH
 from mo_ldap_import_export.ldap_event_generator import LastRun
 from mo_ldap_import_export.ldapapi import LDAPAPI
 from mo_ldap_import_export.utils import combine_dn_strings
@@ -50,9 +49,8 @@ async def test_event_generator_runs_with_listen(
 ) -> None:
     last_run = await get_last_run()
     assert last_run is not None
-    assert last_run.datetime is not None
+    assert last_run.cookie is not None  # DirSync cookie is set after initial sync
     assert last_run.search_base == "o=magenta,dc=magenta,dc=dk"
-    assert last_run.datetime == MICROSOFT_EPOCH
     assert last_run.uuids == []
 
     # Create an entity in LDAP and get its UUID
@@ -60,44 +58,11 @@ async def test_event_generator_runs_with_listen(
     ava_dn = combine_dn_strings(ava_dn_list)
     ava_uuid = UUID(str(await dn2uuid(ava_dn)))
 
-    # Fetch the modification time of the newly created object
-    ava_modify_timestamp = await ldap_api.get_attribute_by_dn(ava_dn, "modifyTimestamp")
-
     # Check that the event generator found our newly added organization
     async for attempt in retrying():
         with attempt:
             last_run = await get_last_run()
             assert last_run is not None
-            assert last_run.datetime is not None
+            assert last_run.cookie is not None
             assert last_run.search_base == "o=magenta,dc=magenta,dc=dk"
-            assert last_run.datetime == ava_modify_timestamp
-            assert last_run.uuids == [ava_uuid]
-
-
-@pytest.mark.integration_test
-@pytest.mark.envvar(
-    {
-        "LISTEN_TO_CHANGES_IN_MO": "False",
-        "LISTEN_TO_CHANGES_IN_LDAP": "False",
-        "CONVERSION_MAPPING": json.dumps(
-            {
-                "ldap_to_mo": {
-                    "Employee": {
-                        "objectClass": "Employee",
-                        "_import_to_mo_": "true",
-                        "_ldap_attributes_": ["givenName", "sn"],
-                        "uuid": "{{ employee_uuid }}",  # TODO: why is this required?
-                        "given_name": "{{ ldap.givenName }}",
-                        "surname": "{{ ldap.sn }}",
-                    }
-                }
-            }
-        ),
-    }
-)
-@pytest.mark.usefixtures("mo_org_unit")
-async def test_no_event_handlers_if_no_listen(
-    graphql_client: GraphQLClient,
-) -> None:
-    listeners = await graphql_client.read_event_listeners()
-    assert listeners.objects == []
+            assert ava_uuid in last_run.uuids

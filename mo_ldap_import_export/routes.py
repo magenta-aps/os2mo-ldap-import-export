@@ -52,7 +52,6 @@ from .ldap import get_ldap_object
 from .ldap import object_search
 from .ldap import paged_search
 from .ldap_emit import publish_uuids
-from .ldap_event_generator import MICROSOFT_EPOCH
 from .types import DN
 from .types import LDAPUUID
 from .types import CPRNumber
@@ -518,7 +517,7 @@ def construct_router(settings: Settings) -> APIRouter:
         uuids_set = set()
         for search_base in search_bases:
             poll_uuids, _ = await ldap_event_generator.poll(
-                search_base, MICROSOFT_EPOCH
+                search_base, None
             )
             uuids_set.update(poll_uuids)
 

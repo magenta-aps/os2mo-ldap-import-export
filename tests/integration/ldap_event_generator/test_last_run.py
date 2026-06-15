@@ -5,7 +5,6 @@ import pytest
 from fastramqpi.context import Context
 from sqlalchemy import select
 
-from mo_ldap_import_export.ldap_event_generator import MICROSOFT_EPOCH
 from mo_ldap_import_export.ldap_event_generator import LastRun
 
 
@@ -27,10 +26,10 @@ async def test_last_run_postgres(context: Context) -> None:
         session.add(last_run)
         assert last_run.id is None
         assert last_run.search_base == "dc=ad"
-        assert last_run.datetime is None
+        assert last_run.cookie is None
 
     async with sessionmaker() as session, session.begin():
         fetched_last_run = await session.scalar(select(LastRun))
         assert fetched_last_run.id is not None
         assert fetched_last_run.search_base == "dc=ad"
-        assert fetched_last_run.datetime == MICROSOFT_EPOCH
+        assert fetched_last_run.cookie is None
